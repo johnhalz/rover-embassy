@@ -1,0 +1,12 @@
+[package]
+name = "rover-embassy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.42", features = ["full"] }
+crossterm = "0.28"
+
+[profile.release]
+opt-level = 3
+lto = true
