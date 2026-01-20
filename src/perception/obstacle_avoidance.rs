@@ -1,7 +1,7 @@
 use crate::types::{EnvironmentState, Path, RobotPose, StanceConfig, LogEntry, LogLevel};
-use crate::logger::create_log;
-use crate::stance::StanceRequest;
-use crate::goal_planning::PathRequest;
+use crate::infra::logger::create_log;
+use crate::perception::stance::StanceRequest;
+use crate::planning::goal_planning::PathRequest;
 use tokio::sync::{broadcast, mpsc};
 
 pub struct ObstacleAvoidance {

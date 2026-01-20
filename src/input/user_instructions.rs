@@ -1,5 +1,5 @@
 use crate::types::{UserCommand, MissionCommand, Waypoint, LogEntry, LogLevel};
-use crate::logger::create_log;
+use crate::infra::logger::create_log;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
 

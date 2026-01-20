@@ -2,12 +2,12 @@
 // @generated
 extern crate alloc;
 
-use crate::foxglove::time_generated::foxglove::*;
+use crate::infra::foxglove::time_generated::foxglove::*;
 
 #[allow(unused_imports, dead_code)]
 pub mod foxglove {
 
-  use crate::foxglove::time_generated::foxglove::*;
+  use crate::infra::foxglove::time_generated::foxglove::*;
 
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_LOG_LEVEL: u8 = 0;

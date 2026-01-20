@@ -1,5 +1,5 @@
 use crate::types::{BehaviorCommand, Behavior, SensorData, RobotState, MotorCommand, LogEntry, LogLevel};
-use crate::logger::create_log;
+use crate::infra::logger::create_log;
 use tokio::sync::{broadcast, mpsc};
 
 pub struct SafetyController {

@@ -1,5 +1,5 @@
 use crate::types::{Path, StanceConfig, BehaviorCommand, Behavior, LogEntry, LogLevel};
-use crate::logger::create_log;
+use crate::infra::logger::create_log;
 use tokio::sync::{broadcast, mpsc};
 use std::time::SystemTime;
 

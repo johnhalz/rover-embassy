@@ -1,5 +1,5 @@
 use crate::types::{LogEntry, LogLevel};
-use crate::foxglove::{Log, LogArgs, LogLevel as FoxgloveLogLevel, Time, TimeArgs};
+use crate::infra::foxglove::{Log, LogArgs, LogLevel as FoxgloveLogLevel, Time, TimeArgs};
 use tokio::sync::{broadcast, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs::File;
@@ -58,7 +58,7 @@ impl Logger {
         let mut writer = Writer::new(file)?;
 
         // Read the Foxglove Log FlatBuffer binary schema
-        let schema_data = include_bytes!("../schemas/Log.bfbs");
+        let schema_data = include_bytes!("../../schemas/Log.bfbs");
 
         // Add schema to MCAP file
         let schema_id = writer.add_schema(

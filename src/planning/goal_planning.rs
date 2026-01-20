@@ -1,6 +1,6 @@
 use crate::types::{Goal, Path, RobotPose, StanceConfig, LogEntry, LogLevel};
-use crate::logger::create_log;
-use crate::stance::StanceRequest;
+use crate::infra::logger::create_log;
+use crate::perception::stance::StanceRequest;
 use tokio::sync::{broadcast, mpsc};
 
 pub struct GoalPlanning {

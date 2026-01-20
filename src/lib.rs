@@ -1,30 +1,11 @@
 // Module declarations
 pub mod types;
-pub mod logger;
-pub mod foxglove;
-
-// Input layer
-pub mod sensor_array;
-pub mod direct_user_input;
-pub mod user_instructions;
-pub mod hardware_interface;
-
-// Core processing
-pub mod input_manager;
-pub mod model_calibration_storage;
-pub mod environment_understanding;
-pub mod state_manager;
-pub mod stance;
-pub mod task_mission_manager;
-pub mod goal_planning;
-pub mod obstacle_avoidance;
-pub mod behaviour;
-
-// Safety and output
-pub mod safety_controller;
-pub mod output_manager;
-pub mod user_feedback;
-pub mod communication_module;
+pub mod infra;
+pub mod input;
+pub mod perception;
+pub mod planning;
+pub mod control;
+pub mod output;
 
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
@@ -112,11 +93,11 @@ impl RoverSystem {
         let (calib_resp_tx, _calib_resp_rx) = mpsc::channel(32);
 
         // Spawn logger first
-        let logger_module = logger::Logger::new(log_rx, self.shutdown_tx.subscribe());
+        let logger_module = infra::logger::Logger::new(log_rx, self.shutdown_tx.subscribe());
         self.task_handles.push(tokio::spawn(logger_module.run()));
 
         // Spawn input layer modules
-        let sensor_array = sensor_array::SensorArray::new(
+        let sensor_array = input::sensor_array::SensorArray::new(
             sensor_data_tx,
             sensor_data_safety_tx,
             log_tx.clone(),
@@ -124,14 +105,14 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(sensor_array.run()));
 
-        let direct_input = direct_user_input::DirectUserInput::new(
+        let direct_input = input::direct_user_input::DirectUserInput::new(
             user_command_tx.clone(),
             log_tx.clone(),
             self.shutdown_tx.subscribe(),
         );
         self.task_handles.push(tokio::spawn(direct_input.run()));
 
-        let user_instructions = user_instructions::UserInstructions::new(
+        let user_instructions = input::user_instructions::UserInstructions::new(
             user_command_tx,
             comm_user_rx,
             log_tx.clone(),
@@ -139,7 +120,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(user_instructions.run()));
 
-        let hardware_interface = hardware_interface::HardwareInterface::new(
+        let hardware_interface = output::hardware_interface::HardwareInterface::new(
             hw_status_tx,
             motor_command_hw_rx,
             log_tx.clone(),
@@ -148,7 +129,7 @@ impl RoverSystem {
         self.task_handles.push(tokio::spawn(hardware_interface.run()));
 
         // Spawn input manager
-        let input_manager = input_manager::InputManager::new(
+        let input_manager = input::input_manager::InputManager::new(
             sensor_data_rx,
             user_command_rx,
             hw_status_rx,
@@ -162,7 +143,7 @@ impl RoverSystem {
         self.task_handles.push(tokio::spawn(input_manager.run()));
 
         // Spawn calibration storage
-        let calibration = model_calibration_storage::ModelCalibrationStorage::new(
+        let calibration = perception::model_calibration_storage::ModelCalibrationStorage::new(
             calib_req_rx,
             calib_resp_tx,
             log_tx.clone(),
@@ -171,7 +152,7 @@ impl RoverSystem {
         self.task_handles.push(tokio::spawn(calibration.run()));
 
         // Spawn core processing modules
-        let env_understanding = environment_understanding::EnvironmentUnderstanding::new(
+        let env_understanding = perception::environment_understanding::EnvironmentUnderstanding::new(
             env_rx,
             env_state_tx,
             log_tx.clone(),
@@ -179,7 +160,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(env_understanding.run()));
 
-        let state_manager = state_manager::StateManager::new(
+        let state_manager = planning::state_manager::StateManager::new(
             state_sensor_rx,
             state_cmd_rx,
             state_tx,
@@ -190,7 +171,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(state_manager.run()));
 
-        let stance = stance::Stance::new(
+        let stance = perception::stance::Stance::new(
             stance_obstacle_req_rx,
             stance_goal_req_rx,
             stance_obstacle_resp_tx,
@@ -201,7 +182,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(stance.run()));
 
-        let task_manager = task_mission_manager::TaskMissionManager::new(
+        let task_manager = planning::task_mission_manager::TaskMissionManager::new(
             task_cmd_rx,
             state_task_rx,
             goal_tx,
@@ -210,7 +191,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(task_manager.run()));
 
-        let goal_planning = goal_planning::GoalPlanning::new(
+        let goal_planning = planning::goal_planning::GoalPlanning::new(
             goal_rx,
             stance_goal_req_tx,
             stance_goal_resp_rx,
@@ -222,7 +203,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(goal_planning.run()));
 
-        let obstacle_avoidance = obstacle_avoidance::ObstacleAvoidance::new(
+        let obstacle_avoidance = perception::obstacle_avoidance::ObstacleAvoidance::new(
             env_state_rx,
             stance_obstacle_req_tx,
             stance_obstacle_resp_rx,
@@ -234,7 +215,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(obstacle_avoidance.run()));
 
-        let behaviour = behaviour::BehaviourModule::new(
+        let behaviour = control::behaviour::BehaviourModule::new(
             behavior_path_goal_rx,
             behavior_path_obstacle_rx,
             stance_behavior_rx,
@@ -245,7 +226,7 @@ impl RoverSystem {
         self.task_handles.push(tokio::spawn(behaviour.run()));
 
         // Spawn safety and output modules
-        let safety_controller = safety_controller::SafetyController::new(
+        let safety_controller = control::safety_controller::SafetyController::new(
             behavior_rx,
             sensor_data_safety_rx,
             state_safety_rx,
@@ -255,7 +236,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(safety_controller.run()));
 
-        let output_manager = output_manager::OutputManager::new(
+        let output_manager = output::output_manager::OutputManager::new(
             motor_command_rx,
             motor_command_hw_tx,
             status_feedback_tx,
@@ -265,7 +246,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(output_manager.run()));
 
-        let user_feedback = user_feedback::UserFeedbackModule::new(
+        let user_feedback = output::user_feedback::UserFeedbackModule::new(
             status_feedback_rx,
             user_feedback_tx,
             log_tx.clone(),
@@ -273,7 +254,7 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(user_feedback.run()));
 
-        let communication = communication_module::CommunicationModule::new(
+        let communication = output::communication_module::CommunicationModule::new(
             status_comm_rx,
             user_feedback_rx,
             comm_user_tx,

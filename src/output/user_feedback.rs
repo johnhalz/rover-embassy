@@ -1,5 +1,5 @@
 use crate::types::{StatusUpdate, UserFeedback, FeedbackType, LogEntry, LogLevel};
-use crate::logger::create_log;
+use crate::infra::logger::create_log;
 use tokio::sync::{broadcast, mpsc};
 
 pub struct UserFeedbackModule {
