@@ -1,4 +1,5 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::style::Stylize;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use rover_embassy::RoverSystem;
 use tokio::sync::broadcast;
@@ -22,7 +23,7 @@ async fn input_listener(shutdown_tx: broadcast::Sender<()>) {
             {
                 // Disable raw mode before shutting down
                 let _ = disable_raw_mode();
-                println!("\n[Main] Shutdown requested, terminating all modules...");
+                println!("\n{}", "[Main] Shutdown requested, terminating all modules...".red().bold());
                 let _ = shutdown_tx.send(());
                 break;
             }
@@ -57,5 +58,5 @@ async fn main() {
     // Wait for all tasks to complete
     rover.wait_for_completion().await;
 
-    println!("\n[Main] All modules stopped. Goodbye!");
+    println!("\n{} {}", "✓".green().bold(), "[Main] All modules stopped. Goodbye!".green());
 }

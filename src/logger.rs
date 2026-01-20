@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use mcap::{Writer, records::MessageHeader};
 use flatbuffers::FlatBufferBuilder;
 use chrono::Local;
+use crossterm::style::Stylize;
 
 pub struct Logger {
     log_rx: mpsc::Receiver<LogEntry>,
@@ -29,7 +30,7 @@ impl Logger {
 
         let (mcap_writer, schema_id) = match Self::create_mcap_writer(&filename) {
             Ok(writer_info) => {
-                println!("[Logger] Created MCAP log file: {}", filename);
+                println!("[Logger] Created MCAP log file: {}", filename.magenta().bold());
                 println!("[Logger] Press 'q' to quit gracefully for proper file indexing!");
                 writer_info
             }

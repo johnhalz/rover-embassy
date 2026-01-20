@@ -28,6 +28,7 @@ pub mod communication_module;
 
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
+use crossterm::style::Stylize;
 
 pub struct RoverSystem {
     shutdown_tx: broadcast::Sender<()>,
@@ -45,8 +46,10 @@ impl RoverSystem {
     }
 
     pub async fn initialize_and_run(&mut self) {
-        println!("=== Rover Embassy Control System ===");
-        println!("Initializing all modules...\n");
+        let version = env!("CARGO_PKG_VERSION");
+        println!("{}", "Rover Embassy Control System".cyan().bold());
+        println!("{} {}", "Version:".cyan(), version.cyan().bold());
+        println!("{}\n", "Initializing all modules...".yellow());
 
         // Create all channels
         let (log_tx, log_rx) = mpsc::channel(256);
@@ -279,8 +282,8 @@ impl RoverSystem {
         );
         self.task_handles.push(tokio::spawn(communication.run()));
 
-        println!("All {} modules initialized and running!", self.task_handles.len());
-        println!("Press 'q' to shutdown\n");
+        println!("{} {}", "✓".green().bold(), format!("All {} modules initialized and running!", self.task_handles.len()).green());
+        println!("{} {}\n", "→".blue().bold(), "Press 'q' to shutdown".blue());
     }
 
     pub fn shutdown_tx(&self) -> broadcast::Sender<()> {
