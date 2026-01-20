@@ -6,6 +6,7 @@ use std::fs::File;
 use std::collections::{BTreeMap, HashMap};
 use mcap::{Writer, records::MessageHeader};
 use flatbuffers::FlatBufferBuilder;
+use chrono::Local;
 
 pub struct Logger {
     log_rx: mpsc::Receiver<LogEntry>,
@@ -22,12 +23,9 @@ impl Logger {
         log_rx: mpsc::Receiver<LogEntry>,
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Self {
-        // Create MCAP file with timestamp
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let filename = format!("rover_logs_{}.mcap", timestamp);
+        // Create MCAP file with human-readable timestamp
+        let timestamp = Local::now().format("%y%m%d_%H%M%S");
+        let filename = format!("log_{}.mcap", timestamp);
 
         let (mcap_writer, schema_id) = match Self::create_mcap_writer(&filename) {
             Ok(writer_info) => {
