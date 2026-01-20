@@ -1,6 +1,7 @@
 // Module declarations
 pub mod types;
 pub mod logger;
+pub mod foxglove;
 
 // Input layer
 pub mod sensor_array;
