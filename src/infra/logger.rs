@@ -30,12 +30,12 @@ impl Logger {
 
         let (mcap_writer, schema_id) = match Self::create_mcap_writer(&filename) {
             Ok(writer_info) => {
-                println!("[Logger] Created MCAP log file: {}", filename.magenta().bold());
-                println!("[Logger] Press 'q' to quit gracefully for proper file indexing!");
+                println!("{} Created MCAP log file: {}", "[Logger]".dark_grey(), filename.magenta().bold());
+                println!("{} Press 'q' to quit gracefully for proper file indexing!", "[Logger]".dark_grey());
                 writer_info
             }
             Err(e) => {
-                eprintln!("[Logger] Failed to create MCAP file: {}. Logging disabled.", e);
+                eprintln!("{} Failed to create MCAP file: {}. Logging disabled.", "[Logger]".dark_grey(), e);
                 (None, 0)
             }
         };
@@ -71,12 +71,12 @@ impl Logger {
     }
 
     pub async fn run(mut self) {
-        println!("[Logger] Starting logger module");
+        println!("{} Starting logger module", "[Logger]".dark_grey());
 
         loop {
             tokio::select! {
                 _ = self.shutdown_rx.recv() => {
-                    println!("[Logger] Shutdown signal received");
+                    println!("{} Shutdown signal received", "[Logger]".dark_grey());
                     break;
                 }
                 Some(entry) = self.log_rx.recv() => {
@@ -89,15 +89,15 @@ impl Logger {
 
         // Finalize MCAP file - write summary section and footer
         if let Some(mut writer) = self.mcap_writer.take() {
-            println!("[Logger] Finalizing MCAP file with {} messages...", self.message_count);
+            println!("{} Finalizing MCAP file with {} messages...", "[Logger]".dark_grey(), self.message_count);
             if let Err(e) = writer.finish() {
-                eprintln!("[Logger] Error finishing MCAP file: {}", e);
+                eprintln!("{} Error finishing MCAP file: {}", "[Logger]".dark_grey(), e);
             } else {
-                println!("[Logger] MCAP file finalized successfully (indexed)");
+                println!("{} MCAP file finalized successfully (indexed)", "[Logger]".dark_grey());
             }
         }
 
-        println!("[Logger] Stopped");
+        println!("{} Stopped", "[Logger]".dark_grey());
     }
 
     fn log_entry(&mut self, entry: &LogEntry) {
@@ -124,7 +124,7 @@ impl Logger {
                         channel_id
                     }
                     Err(e) => {
-                        eprintln!("[Logger] Failed to create channel for module {}: {}", entry.module, e);
+                        eprintln!("{} Failed to create channel for module {}: {}", "[Logger]".dark_grey(), entry.module, e);
                         return;
                     }
                 }
@@ -180,7 +180,7 @@ impl Logger {
 
         let writer = self.mcap_writer.as_mut().unwrap();
         if let Err(e) = writer.write_to_known_channel(&header, message_data) {
-            eprintln!("[Logger] Error writing to MCAP: {}", e);
+            eprintln!("{} Error writing to MCAP: {}", "[Logger]".dark_grey(), e);
         }
 
         self.message_count += 1;
@@ -192,7 +192,7 @@ impl Drop for Logger {
         // Ensure MCAP file is properly finalized when logger is dropped
         if let Some(mut writer) = self.mcap_writer.take() {
             if let Err(e) = writer.finish() {
-                eprintln!("[Logger] Error finishing MCAP file in Drop: {}", e);
+                eprintln!("{} Error finishing MCAP file in Drop: {}", "[Logger]".dark_grey(), e);
             }
         }
     }
