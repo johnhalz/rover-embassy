@@ -1,13 +1,16 @@
 use crate::types::{LogEntry, LogLevel};
-use crate::infra::foxglove::{Log, LogArgs, LogLevel as FoxgloveLogLevel, Time, TimeArgs};
+use crate::infra::foxglove as foxglove_schemas;
+use foxglove_schemas::{Log, LogArgs, LogLevel as FoxgloveLogLevel, Time, TimeArgs};
 use tokio::sync::{broadcast, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs::File;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use mcap::{Writer, records::MessageHeader};
 use flatbuffers::FlatBufferBuilder;
 use chrono::Local;
 use crossterm::style::Stylize;
+use foxglove::{Context, RawChannel, Schema, WebSocketServer, WebSocketServerHandle};
 
 pub struct Logger {
     log_rx: mpsc::Receiver<LogEntry>,
@@ -16,6 +19,9 @@ pub struct Logger {
     mcap_writer: Option<Writer<File>>,
     schema_id: u16,
     module_channels: HashMap<String, u16>,
+    foxglove_context: Option<Arc<Context>>,
+    ws_server_handle: Option<WebSocketServerHandle>,
+    ws_channels: HashMap<String, Arc<RawChannel>>,
     message_count: u64,
 }
 
@@ -47,6 +53,9 @@ impl Logger {
             mcap_writer,
             schema_id,
             module_channels: HashMap::new(),
+            foxglove_context: None,
+            ws_server_handle: None,
+            ws_channels: HashMap::new(),
             message_count: 0,
         }
     }
@@ -70,8 +79,42 @@ impl Logger {
         Ok((Some(writer), schema_id))
     }
 
+    async fn create_websocket_server() -> Result<(Arc<Context>, WebSocketServerHandle, String), Box<dyn std::error::Error>> {
+        let context = Context::new();
+        let host = "127.0.0.1";
+        let port = 8765;
+
+        let server = WebSocketServer::new()
+            .name("RoverOS Logger")
+            .bind(host, port)
+            .context(&context)
+            .start()
+            .await?;
+
+        let addr = format!("{}:{}", host, port);
+
+        Ok((context, server, addr))
+    }
+
     pub async fn run(mut self) {
         println!("{} Starting logger module", "[Logger]".dark_grey());
+
+        // Initialize WebSocket server asynchronously
+        match Self::create_websocket_server().await {
+            Ok((context, server_handle, addr)) => {
+                println!(
+                    "{} {} {}",
+                    "[Logger]".dark_grey(),
+                    "Foxglove WebSocket server listening on".green(),
+                    format!("ws://{}", addr).cyan().bold()
+                );
+                self.foxglove_context = Some(context);
+                self.ws_server_handle = Some(server_handle);
+            }
+            Err(e) => {
+                eprintln!("{} Failed to start WebSocket server: {}. Livestreaming disabled.", "[Logger]".dark_grey(), e);
+            }
+        }
 
         loop {
             tokio::select! {
@@ -101,37 +144,7 @@ impl Logger {
     }
 
     fn log_entry(&mut self, entry: &LogEntry) {
-        // Write to MCAP file
-        if self.mcap_writer.is_none() {
-            return;
-        }
-
-        // Get or create channel for this module
-        let channel_id = match self.module_channels.get(&entry.module) {
-            Some(&channel_id) => channel_id,
-            None => {
-                // Need to create a new channel
-                let topic = format!("roverOS/{}", entry.module);
-                let writer = self.mcap_writer.as_mut().unwrap();
-                match writer.add_channel(
-                    self.schema_id,
-                    &topic,
-                    "flatbuffer",
-                    &BTreeMap::new(),
-                ) {
-                    Ok(channel_id) => {
-                        self.module_channels.insert(entry.module.clone(), channel_id);
-                        channel_id
-                    }
-                    Err(e) => {
-                        eprintln!("{} Failed to create channel for module {}: {}", "[Logger]".dark_grey(), entry.module, e);
-                        return;
-                    }
-                }
-            }
-        };
-
-        // Convert SystemTime to nanoseconds since UNIX_EPOCH for MCAP
+        // Convert SystemTime to nanoseconds since UNIX_EPOCH
         let duration = entry.timestamp
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
@@ -170,17 +183,78 @@ impl Logger {
 
         builder.finish(log, None);
         let message_data = builder.finished_data();
+        
+        // Copy the data so we can use it for both MCAP and WebSocket
+        let message_data_copy = message_data.to_vec();
 
-        let header = MessageHeader {
-            channel_id,
-            sequence: 0,
-            log_time: timestamp_nanos,
-            publish_time: timestamp_nanos,
-        };
+        // Publish to WebSocket FIRST (before MCAP to ensure real-time delivery)
+        if let Some(context) = &self.foxglove_context {
+            // Get or create WebSocket channel for this module
+            if !self.ws_channels.contains_key(&entry.module) {
+                // Read the Foxglove Log FlatBuffer binary schema
+                let schema_data = include_bytes!("../../schemas/Log.bfbs");
+                
+                // Create a new WebSocket channel
+                let topic = format!("roverOS/{}", entry.module);
+                let schema = Schema::new("foxglove.Log", "flatbuffer", schema_data);
+                match context
+                    .channel_builder(topic)
+                    .schema(schema)
+                    .message_encoding("flatbuffer")
+                    .build_raw()
+                {
+                    Ok(channel) => {
+                        self.ws_channels.insert(entry.module.clone(), channel);
+                    }
+                    Err(e) => {
+                        eprintln!("{} Failed to create WebSocket channel for module {}: {}", "[Logger]".dark_grey(), entry.module, e);
+                        return;
+                    }
+                }
+            }
 
-        let writer = self.mcap_writer.as_mut().unwrap();
-        if let Err(e) = writer.write_to_known_channel(&header, message_data) {
-            eprintln!("{} Error writing to MCAP: {}", "[Logger]".dark_grey(), e);
+            // Publish message to WebSocket
+            if let Some(ws_channel) = self.ws_channels.get(&entry.module) {
+                ws_channel.log(&message_data_copy);
+            }
+        }
+
+        // Write to MCAP file
+        if let Some(writer) = &mut self.mcap_writer {
+            // Get or create MCAP channel for this module
+            let channel_id = match self.module_channels.get(&entry.module) {
+                Some(&channel_id) => channel_id,
+                None => {
+                    // Need to create a new channel
+                    let topic = format!("roverOS/{}", entry.module);
+                    match writer.add_channel(
+                        self.schema_id,
+                        &topic,
+                        "flatbuffer",
+                        &BTreeMap::new(),
+                    ) {
+                        Ok(channel_id) => {
+                            self.module_channels.insert(entry.module.clone(), channel_id);
+                            channel_id
+                        }
+                        Err(e) => {
+                            eprintln!("{} Failed to create MCAP channel for module {}: {}", "[Logger]".dark_grey(), entry.module, e);
+                            return;
+                        }
+                    }
+                }
+            };
+
+            let header = MessageHeader {
+                channel_id,
+                sequence: 0,
+                log_time: timestamp_nanos,
+                publish_time: timestamp_nanos,
+            };
+
+            if let Err(e) = writer.write_to_known_channel(&header, &message_data_copy) {
+                eprintln!("{} Error writing to MCAP: {}", "[Logger]".dark_grey(), e);
+            }
         }
 
         self.message_count += 1;
