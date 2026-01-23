@@ -1,0 +1,91 @@
+/* Custom styles for Rover Embassy documentation */
+
+/* Mermaid diagram styling */
+.mermaid {
+    text-align: center;
+    margin: 2rem 0;
+    background: var(--md-code-bg-color);
+    border-radius: 0.3rem;
+    padding: 1rem;
+}
+
+/* Code block improvements */
+.highlight {
+    border-radius: 0.3rem;
+}
+
+/* Table styling */
+.md-typeset table:not([class]) {
+    border: 1px solid var(--md-default-fg-color--lighter);
+    border-radius: 0.3rem;
+}
+
+.md-typeset table:not([class]) th {
+    background-color: var(--md-default-fg-color--lightest);
+    font-weight: 600;
+}
+
+/* Admonition improvements */
+.md-typeset .admonition {
+    border-radius: 0.3rem;
+}
+
+/* Navigation improvements */
+.md-nav__link {
+    border-radius: 0.2rem;
+}
+
+.md-nav__link:hover {
+    background-color: var(--md-default-fg-color--lightest);
+}
+
+/* Header improvements */
+.md-header {
+    box-shadow: 0 0 0.2rem rgba(0,0,0,.1), 0 0.2rem 0.4rem rgba(0,0,0,.2);
+}
+
+/* Footer improvements */
+.md-footer {
+    margin-top: 2rem;
+}
+
+/* Content spacing */
+.md-content {
+    margin-bottom: 2rem;
+}
+
+/* Link improvements */
+.md-typeset a {
+    text-decoration: underline;
+    text-decoration-color: var(--md-primary-color);
+    text-underline-offset: 0.2em;
+}
+
+.md-typeset a:hover {
+    text-decoration-thickness: 2px;
+}
+
+/* Code inline improvements */
+.md-typeset code {
+    background-color: var(--md-code-bg-color);
+    border-radius: 0.2rem;
+    padding: 0.1em 0.3em;
+    font-size: 0.9em;
+}
+
+/* Blockquote styling */
+.md-typeset blockquote {
+    border-left: 0.2rem solid var(--md-primary-color);
+    padding-left: 1rem;
+    margin-left: 0;
+}
+
+/* Task list improvements */
+.md-typeset .task-list-control {
+    border-radius: 0.2rem;
+}
+
+/* Ensure proper spacing for diagrams */
+.md-typeset .mermaid + p {
+    margin-top: 1rem;
+}
