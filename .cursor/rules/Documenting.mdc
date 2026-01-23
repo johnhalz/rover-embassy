@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+When adding documentation, add it in the docs folder, and make sure it is referenced in the mkdocs.yml file.
