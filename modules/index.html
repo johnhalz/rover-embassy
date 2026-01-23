@@ -1041,7 +1041,7 @@
 <p>Generates simulated sensor readings for the rover system.</p>
 <p><strong>Inputs</strong>: None (generates data internally)</p>
 <p><strong>Outputs</strong>:
-- <code>sensor_data_tx</code>: Sensor data to Input Manager
+- <code>hardware_interface_tx</code>: Sensor data to Hardware Interface (which forwards to Input Manager)
 - <code>sensor_data_safety_tx</code>: Sensor data to Safety Controller</p>
 <p><strong>Data Generated</strong>:
 - Distance sensor readings (multiple sensors)
@@ -1080,10 +1080,13 @@
 <hr />
 <h3 id="hardware-interface">Hardware Interface</h3>
 <p><strong>Location</strong>: <code>src/output/hardware_interface.rs</code></p>
-<p>Manages hardware status and executes motor commands. Currently simulates hardware behavior.</p>
+<p>Manages hardware status, forwards sensor data to Input Manager, and executes behavior commands from the Behaviour module. Currently simulates hardware behavior.</p>
 <p><strong>Inputs</strong>:
-- <code>motor_command_hw_rx</code>: Motor commands from Output Manager</p>
+- <code>sensor_rx</code>: Sensor data from Sensor Array
+- <code>behavior_rx</code>: Behavior commands from Safety Controller (validated)
+- <code>motor_command_hw_rx</code>: Motor commands (for backward compatibility)</p>
 <p><strong>Outputs</strong>:
+- <code>sensor_tx</code>: Sensor data forwarded to Input Manager
 - <code>hw_status_tx</code>: Hardware status to Input Manager</p>
 <p><strong>Status Information</strong>:
 - Battery voltage
@@ -1096,7 +1099,7 @@
 <p><strong>Location</strong>: <code>src/input/input_manager.rs</code></p>
 <p>Central hub that aggregates all input sources and routes data to appropriate processing modules.</p>
 <p><strong>Inputs</strong>:
-- <code>sensor_data_rx</code>: Sensor data from Sensor Array
+- <code>sensor_data_rx</code>: Sensor data from Hardware Interface (which receives it from Sensor Array)
 - <code>user_command_rx</code>: Commands from Direct User Input and User Instructions
 - <code>hw_status_rx</code>: Hardware status from Hardware Interface</p>
 <p><strong>Outputs</strong>:
@@ -1251,7 +1254,7 @@
 - <code>behavior_path_obstacle_rx</code>: Avoidance paths from Obstacle Avoidance
 - <code>stance_behavior_rx</code>: Stance configuration from Stance</p>
 <p><strong>Outputs</strong>:
-- <code>behavior_tx</code>: Behavior commands to Safety Controller</p>
+- <code>safety_controller_tx</code>: Behavior commands to Safety Controller</p>
 <p><strong>Behaviors</strong>:
 - <code>Idle</code>: No action
 - <code>MoveTowards { target, speed }</code>: Move toward target
@@ -1262,34 +1265,36 @@
 <hr />
 <h3 id="safety-controller">Safety Controller</h3>
 <p><strong>Location</strong>: <code>src/control/safety_controller.rs</code></p>
-<p>Final safety validation layer before hardware commands.</p>
+<p>Final safety validation layer before hardware commands. Validates behavior commands against sensor data and robot state, and can block unsafe commands before they reach the Hardware Interface.</p>
 <p><strong>Inputs</strong>:
-- <code>behavior_rx</code>: Behavior commands from Behaviour
+- <code>behavior_rx</code>: Behavior commands from Behaviour module
 - <code>sensor_data_safety_rx</code>: Sensor data from Sensor Array
 - <code>state_safety_rx</code>: State from State Manager</p>
 <p><strong>Outputs</strong>:
-- <code>motor_command_tx</code>: Validated motor commands to Output Manager</p>
+- <code>hardware_interface_tx</code>: Validated behavior commands to Hardware Interface</p>
 <p><strong>Safety Checks</strong>:
 - Validates behavior commands against sensor data
-- Checks robot state for safety
+- Checks robot state for safety (emergency stop, etc.)
+- Blocks commands if battery level is critical (&lt; 10%)
+- Blocks movement commands if obstacles are too close (&lt; 0.5m)
 - Can override commands in emergency situations
-- Validates motor command ranges</p>
-<p><strong>Logging</strong>: Logs safety checks and overrides at WARN/ERROR level</p>
+- Only allows safe commands to reach Hardware Interface</p>
+<p><strong>Logging</strong>: Logs safety checks, blocks, and validations at DEBUG/WARN/ERROR level</p>
 <hr />
 <h2 id="output-layer">Output Layer</h2>
 <h3 id="output-manager">Output Manager</h3>
 <p><strong>Location</strong>: <code>src/output/output_manager.rs</code></p>
-<p>Routes commands to appropriate outputs.</p>
+<p>Routes status updates to appropriate outputs. Note: Output Manager is no longer in the direct command path (Behaviour → Hardware Interface), but continues to handle status updates.</p>
 <p><strong>Inputs</strong>:
-- <code>motor_command_rx</code>: Motor commands from Safety Controller</p>
+- <code>motor_command_rx</code>: Motor commands (monitoring only, not in direct path)</p>
 <p><strong>Outputs</strong>:
-- <code>motor_command_hw_tx</code>: Motor commands to Hardware Interface
+- <code>motor_command_hw_tx</code>: Motor commands to Hardware Interface (for backward compatibility)
 - <code>status_feedback_tx</code>: Status to User Feedback
 - <code>status_comm_tx</code>: Status to Communication Module</p>
 <p><strong>Responsibilities</strong>:
-- Routes motor commands to hardware
 - Distributes status updates
-- Manages output priorities</p>
+- Manages output priorities
+- Provides status information to user feedback and communication modules</p>
 <p><strong>Logging</strong>: Logs routing decisions at DEBUG level</p>
 <hr />
 <h3 id="user-feedback">User Feedback</h3>
@@ -1351,8 +1356,8 @@
 </tr>
 <tr>
 <td>Hardware Interface</td>
-<td>1</td>
-<td>1</td>
+<td>3</td>
+<td>2</td>
 <td>No</td>
 </tr>
 <tr>
