@@ -13,7 +13,7 @@ Generates simulated sensor readings for the rover system.
 **Inputs**: None (generates data internally)
 
 **Outputs**:
-- `sensor_data_tx`: Sensor data to Input Manager
+- `hardware_interface_tx`: Sensor data to Hardware Interface (which forwards to Input Manager)
 - `sensor_data_safety_tx`: Sensor data to Safety Controller
 
 **Data Generated**:
@@ -74,12 +74,15 @@ Handles high-level mission commands and processes feedback from the Communicatio
 
 **Location**: `src/output/hardware_interface.rs`
 
-Manages hardware status and executes motor commands. Currently simulates hardware behavior.
+Manages hardware status, forwards sensor data to Input Manager, and executes behavior commands from the Behaviour module. Currently simulates hardware behavior.
 
 **Inputs**:
-- `motor_command_hw_rx`: Motor commands from Output Manager
+- `sensor_rx`: Sensor data from Sensor Array
+- `behavior_rx`: Behavior commands from Safety Controller (validated)
+- `motor_command_hw_rx`: Motor commands (for backward compatibility)
 
 **Outputs**:
+- `sensor_tx`: Sensor data forwarded to Input Manager
 - `hw_status_tx`: Hardware status to Input Manager
 
 **Status Information**:
@@ -100,7 +103,7 @@ Manages hardware status and executes motor commands. Currently simulates hardwar
 Central hub that aggregates all input sources and routes data to appropriate processing modules.
 
 **Inputs**:
-- `sensor_data_rx`: Sensor data from Sensor Array
+- `sensor_data_rx`: Sensor data from Hardware Interface (which receives it from Sensor Array)
 - `user_command_rx`: Commands from Direct User Input and User Instructions
 - `hw_status_rx`: Hardware status from Hardware Interface
 
@@ -329,7 +332,7 @@ Translates high-level plans into executable actions.
 - `stance_behavior_rx`: Stance configuration from Stance
 
 **Outputs**:
-- `behavior_tx`: Behavior commands to Safety Controller
+- `safety_controller_tx`: Behavior commands to Safety Controller
 
 **Behaviors**:
 - `Idle`: No action
@@ -346,23 +349,25 @@ Translates high-level plans into executable actions.
 
 **Location**: `src/control/safety_controller.rs`
 
-Final safety validation layer before hardware commands.
+Final safety validation layer before hardware commands. Validates behavior commands against sensor data and robot state, and can block unsafe commands before they reach the Hardware Interface.
 
 **Inputs**:
-- `behavior_rx`: Behavior commands from Behaviour
+- `behavior_rx`: Behavior commands from Behaviour module
 - `sensor_data_safety_rx`: Sensor data from Sensor Array
 - `state_safety_rx`: State from State Manager
 
 **Outputs**:
-- `motor_command_tx`: Validated motor commands to Output Manager
+- `hardware_interface_tx`: Validated behavior commands to Hardware Interface
 
 **Safety Checks**:
 - Validates behavior commands against sensor data
-- Checks robot state for safety
+- Checks robot state for safety (emergency stop, etc.)
+- Blocks commands if battery level is critical (< 10%)
+- Blocks movement commands if obstacles are too close (< 0.5m)
 - Can override commands in emergency situations
-- Validates motor command ranges
+- Only allows safe commands to reach Hardware Interface
 
-**Logging**: Logs safety checks and overrides at WARN/ERROR level
+**Logging**: Logs safety checks, blocks, and validations at DEBUG/WARN/ERROR level
 
 ---
 
@@ -372,20 +377,20 @@ Final safety validation layer before hardware commands.
 
 **Location**: `src/output/output_manager.rs`
 
-Routes commands to appropriate outputs.
+Routes status updates to appropriate outputs. Note: Output Manager is no longer in the direct command path (Behaviour → Hardware Interface), but continues to handle status updates.
 
 **Inputs**:
-- `motor_command_rx`: Motor commands from Safety Controller
+- `motor_command_rx`: Motor commands (monitoring only, not in direct path)
 
 **Outputs**:
-- `motor_command_hw_tx`: Motor commands to Hardware Interface
+- `motor_command_hw_tx`: Motor commands to Hardware Interface (for backward compatibility)
 - `status_feedback_tx`: Status to User Feedback
 - `status_comm_tx`: Status to Communication Module
 
 **Responsibilities**:
-- Routes motor commands to hardware
 - Distributes status updates
 - Manages output priorities
+- Provides status information to user feedback and communication modules
 
 **Logging**: Logs routing decisions at DEBUG level
 
@@ -442,7 +447,7 @@ Handles bidirectional communication with external systems.
 | Sensor Array | 0 | 2 | No |
 | Direct User Input | 0 | 1 | No |
 | User Instructions | 1 | 1 | No |
-| Hardware Interface | 1 | 1 | No |
+| Hardware Interface | 3 | 2 | No |
 | Input Manager | 3 | 4 | No |
 | Logger | 1 | 0 | No |
 | Model/Calibration Storage | 1 | 1 | No |

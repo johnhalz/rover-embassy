@@ -7,7 +7,7 @@ pub struct BehaviourModule {
     goal_path_rx: mpsc::Receiver<Path>,
     obstacle_path_rx: mpsc::Receiver<Path>,
     stance_rx: mpsc::Receiver<StanceConfig>,
-    behavior_tx: mpsc::Sender<BehaviorCommand>,
+    safety_controller_tx: mpsc::Sender<BehaviorCommand>,
     log_tx: mpsc::Sender<LogEntry>,
     shutdown_rx: broadcast::Receiver<()>,
 }
@@ -17,7 +17,7 @@ impl BehaviourModule {
         goal_path_rx: mpsc::Receiver<Path>,
         obstacle_path_rx: mpsc::Receiver<Path>,
         stance_rx: mpsc::Receiver<StanceConfig>,
-        behavior_tx: mpsc::Sender<BehaviorCommand>,
+        safety_controller_tx: mpsc::Sender<BehaviorCommand>,
         log_tx: mpsc::Sender<LogEntry>,
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Self {
@@ -25,7 +25,7 @@ impl BehaviourModule {
             goal_path_rx,
             obstacle_path_rx,
             stance_rx,
-            behavior_tx,
+            safety_controller_tx,
             log_tx,
             shutdown_rx,
         }
@@ -84,11 +84,11 @@ impl BehaviourModule {
                 priority: 5,
             };
 
-            if let Err(_) = self.behavior_tx.send(behavior).await {
+            if let Err(_) = self.safety_controller_tx.send(behavior).await {
                 let _ = self.log_tx.send(create_log(
                     "Behaviour",
                     LogLevel::Error,
-                    "Failed to send behavior command".to_string()
+                    "Failed to send behavior command to safety controller".to_string()
                 )).await;
             }
         }
@@ -107,6 +107,6 @@ impl BehaviourModule {
             priority: 7,
         };
 
-        let _ = self.behavior_tx.send(behavior).await;
+        let _ = self.safety_controller_tx.send(behavior).await;
     }
 }

@@ -1,4 +1,4 @@
-use crate::types::{BehaviorCommand, Behavior, SensorData, RobotState, MotorCommand, LogEntry, LogLevel};
+use crate::types::{BehaviorCommand, Behavior, SensorData, RobotState, LogEntry, LogLevel};
 use crate::infra::logger::create_log;
 use tokio::sync::{broadcast, mpsc};
 
@@ -6,10 +6,11 @@ pub struct SafetyController {
     behavior_rx: mpsc::Receiver<BehaviorCommand>,
     sensor_rx: mpsc::Receiver<SensorData>,
     state_rx: mpsc::Receiver<RobotState>,
-    motor_tx: mpsc::Sender<MotorCommand>,
+    hardware_interface_tx: mpsc::Sender<BehaviorCommand>,
     log_tx: mpsc::Sender<LogEntry>,
     shutdown_rx: broadcast::Receiver<()>,
     emergency_stop: bool,
+    latest_sensor_data: Option<SensorData>,
 }
 
 impl SafetyController {
@@ -17,7 +18,7 @@ impl SafetyController {
         behavior_rx: mpsc::Receiver<BehaviorCommand>,
         sensor_rx: mpsc::Receiver<SensorData>,
         state_rx: mpsc::Receiver<RobotState>,
-        motor_tx: mpsc::Sender<MotorCommand>,
+        hardware_interface_tx: mpsc::Sender<BehaviorCommand>,
         log_tx: mpsc::Sender<LogEntry>,
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Self {
@@ -25,10 +26,11 @@ impl SafetyController {
             behavior_rx,
             sensor_rx,
             state_rx,
-            motor_tx,
+            hardware_interface_tx,
             log_tx,
             shutdown_rx,
             emergency_stop: false,
+            latest_sensor_data: None,
         }
     }
 
@@ -53,6 +55,7 @@ impl SafetyController {
                     self.validate_and_execute(behavior_cmd).await;
                 }
                 Some(sensor_data) = self.sensor_rx.recv() => {
+                    self.latest_sensor_data = Some(sensor_data.clone());
                     self.check_safety(&sensor_data).await;
                 }
                 Some(state) = self.state_rx.recv() => {
@@ -77,6 +80,7 @@ impl SafetyController {
     }
 
     async fn validate_and_execute(&mut self, cmd: BehaviorCommand) {
+        // Check emergency stop
         if self.emergency_stop {
             let _ = self.log_tx.send(create_log(
                 "SafetyController",
@@ -86,28 +90,46 @@ impl SafetyController {
             return;
         }
 
-        match cmd.behavior {
-            Behavior::MoveTowards { target, speed } => {
-                let motor_cmd = self.calculate_motor_command(target, speed);
-                let _ = self.motor_tx.send(motor_cmd).await;
-            }
-            Behavior::AvoidObstacle { direction } => {
+        // Validate against sensor data
+        if let Some(ref sensor_data) = self.latest_sensor_data {
+            // Check for critical battery level
+            if sensor_data.battery_level < 0.1 {
                 let _ = self.log_tx.send(create_log(
                     "SafetyController",
-                    LogLevel::Info,
-                    "Executing obstacle avoidance maneuver".to_string()
+                    LogLevel::Error,
+                    format!("Command blocked - critical battery level: {:.1}%", sensor_data.battery_level * 100.0)
                 )).await;
+                return;
+            }
 
-                let motor_cmd = MotorCommand {
-                    left_speed: direction[1] * 0.5,
-                    right_speed: -direction[1] * 0.5,
-                };
-                let _ = self.motor_tx.send(motor_cmd).await;
+            // Check for immediate obstacles in front
+            if let Behavior::MoveTowards { .. } = cmd.behavior {
+                if let Some(&front_distance) = sensor_data.distance_sensors.get(0) {
+                    if front_distance < 0.5 {
+                        let _ = self.log_tx.send(create_log(
+                            "SafetyController",
+                            LogLevel::Warn,
+                            format!("Command blocked - obstacle too close: {:.2}m", front_distance)
+                        )).await;
+                        return;
+                    }
+                }
             }
-            Behavior::EmergencyStop => {
-                self.send_stop_command().await;
-            }
-            _ => {}
+        }
+
+        // Command is safe, forward to Hardware Interface
+        if let Err(_) = self.hardware_interface_tx.send(cmd).await {
+            let _ = self.log_tx.send(create_log(
+                "SafetyController",
+                LogLevel::Error,
+                "Failed to send validated command to hardware interface".to_string()
+            )).await;
+        } else {
+            let _ = self.log_tx.send(create_log(
+                "SafetyController",
+                LogLevel::Debug,
+                "Command validated and forwarded to hardware interface".to_string()
+            )).await;
         }
     }
 
@@ -134,21 +156,11 @@ impl SafetyController {
     }
 
     async fn send_stop_command(&mut self) {
-        let stop_cmd = MotorCommand {
-            left_speed: 0.0,
-            right_speed: 0.0,
+        let stop_cmd = BehaviorCommand {
+            timestamp: std::time::SystemTime::now(),
+            behavior: Behavior::EmergencyStop,
+            priority: 10, // Highest priority for emergency stop
         };
-        let _ = self.motor_tx.send(stop_cmd).await;
-    }
-
-    fn calculate_motor_command(&self, target: [f32; 3], speed: f32) -> MotorCommand {
-        // Simplified differential drive calculation
-        let angle_to_target = target[1].atan2(target[0]);
-        let turn_factor = angle_to_target.sin();
-
-        MotorCommand {
-            left_speed: speed * (1.0 - turn_factor * 0.5),
-            right_speed: speed * (1.0 + turn_factor * 0.5),
-        }
+        let _ = self.hardware_interface_tx.send(stop_cmd).await;
     }
 }

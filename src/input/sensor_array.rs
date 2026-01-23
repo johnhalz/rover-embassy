@@ -5,7 +5,7 @@ use tokio::time::{Duration, sleep};
 use std::time::SystemTime;
 
 pub struct SensorArray {
-    sensor_tx: mpsc::Sender<SensorData>,
+    hardware_interface_tx: mpsc::Sender<SensorData>,
     safety_sensor_tx: mpsc::Sender<SensorData>,
     log_tx: mpsc::Sender<LogEntry>,
     shutdown_rx: broadcast::Receiver<()>,
@@ -13,13 +13,13 @@ pub struct SensorArray {
 
 impl SensorArray {
     pub fn new(
-        sensor_tx: mpsc::Sender<SensorData>,
+        hardware_interface_tx: mpsc::Sender<SensorData>,
         safety_sensor_tx: mpsc::Sender<SensorData>,
         log_tx: mpsc::Sender<LogEntry>,
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Self {
         Self {
-            sensor_tx,
+            hardware_interface_tx,
             safety_sensor_tx,
             log_tx,
             shutdown_rx,
@@ -48,12 +48,12 @@ impl SensorArray {
                 _ = sleep(Duration::from_millis(500)) => {
                     let sensor_data = self.generate_sensor_data(counter);
 
-                    // Send to both input manager and safety controller
-                    if let Err(_) = self.sensor_tx.send(sensor_data.clone()).await {
+                    // Send to hardware interface (which forwards to input manager) and safety controller
+                    if let Err(_) = self.hardware_interface_tx.send(sensor_data.clone()).await {
                         let _ = self.log_tx.send(create_log(
                             "SensorArray",
                             LogLevel::Error,
-                            "Failed to send sensor data to input manager".to_string()
+                            "Failed to send sensor data to hardware interface".to_string()
                         )).await;
                     }
 

@@ -9,10 +9,11 @@ The following diagram shows the complete system architecture and module interact
 ```mermaid
 graph TD
 
-    SA[Sensor Array] --> IM[Input MGR]
+    SA[Sensor Array] --> HI[Hardware Interface]
+    HI --> IM[Input MGR]
     DUI[Direct User Input] --> IM
     UI[User Instructions] --> IM
-    HI[Hardware Interface] --> IM
+    HI --> IM
     IM --> L[Logger]
     IM --> EU[Environment Understanding]
     IM --> S[Stance]
@@ -33,12 +34,8 @@ graph TD
     B --> SC[Safety Controller]
     SA --> SC
     SM --> SC
-    SC --> OM[Output Manager]
-    OM --> UF[User Feedback]
-    OM --> HI
-    OM --> CM[Communication Module]
-    CM --> UI
-    UF --> CM
+    SC --> HI
+    SC --> L
     EU --> L
     S --> L
     SM --> L
@@ -46,8 +43,7 @@ graph TD
     GP --> L
     OA --> L
     B --> L
-    SC --> L
-    OM --> L
+    HI --> L
 ```
 
 ## Layer Overview
@@ -63,7 +59,7 @@ The input layer collects data from various sources:
 | **Sensor Array** | Generates simulated sensor readings (distance, IMU, GPS, battery) |
 | **Direct User Input** | Captures manual control commands from keyboard |
 | **User Instructions** | Handles high-level mission commands |
-| **Hardware Interface** | Manages hardware status and motor commands |
+| **Hardware Interface** | Manages hardware status, forwards sensor data, and executes behavior commands |
 
 ### 2. Core Processing (9 modules)
 
@@ -105,7 +101,9 @@ The output layer handles communication and hardware control:
 ### Forward Flow (Sensors → Hardware)
 
 ```
-Sensors/User Input 
+Sensors
+    ↓
+Hardware Interface
     ↓
 Input Manager 
     ↓
@@ -113,11 +111,11 @@ Processing Modules (Environment Understanding, State Manager, Planning)
     ↓
 Behavior Module
     ↓
-Safety Controller
-    ↓
-Output Manager
+Safety Controller (validates and can block unsafe commands)
     ↓
 Hardware Interface
+    ↓
+Hardware Output
 ```
 
 ### Feedback Loops

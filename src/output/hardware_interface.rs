@@ -1,26 +1,39 @@
-use crate::types::{HardwareStatus, HealthStatus, MotorCommand, LogEntry, LogLevel};
+use crate::types::{HardwareStatus, HealthStatus, MotorCommand, SensorData, BehaviorCommand, Behavior, LogEntry, LogLevel};
 use crate::infra::logger::create_log;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
 use std::time::SystemTime;
 
 pub struct HardwareInterface {
-    status_tx: mpsc::Sender<HardwareStatus>,
+    // Inputs
+    sensor_rx: mpsc::Receiver<SensorData>,
+    behavior_rx: mpsc::Receiver<BehaviorCommand>,
     motor_rx: mpsc::Receiver<MotorCommand>,
+    
+    // Outputs
+    sensor_tx: mpsc::Sender<SensorData>,
+    status_tx: mpsc::Sender<HardwareStatus>,
+    
     log_tx: mpsc::Sender<LogEntry>,
     shutdown_rx: broadcast::Receiver<()>,
 }
 
 impl HardwareInterface {
     pub fn new(
-        status_tx: mpsc::Sender<HardwareStatus>,
+        sensor_rx: mpsc::Receiver<SensorData>,
+        behavior_rx: mpsc::Receiver<BehaviorCommand>,
         motor_rx: mpsc::Receiver<MotorCommand>,
+        sensor_tx: mpsc::Sender<SensorData>,
+        status_tx: mpsc::Sender<HardwareStatus>,
         log_tx: mpsc::Sender<LogEntry>,
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Self {
         Self {
-            status_tx,
+            sensor_rx,
+            behavior_rx,
             motor_rx,
+            sensor_tx,
+            status_tx,
             log_tx,
             shutdown_rx,
         }
@@ -45,7 +58,22 @@ impl HardwareInterface {
                     )).await;
                     break;
                 }
+                Some(sensor_data) = self.sensor_rx.recv() => {
+                    // Forward sensor data to Input Manager
+                    if let Err(_) = self.sensor_tx.send(sensor_data).await {
+                        let _ = self.log_tx.send(create_log(
+                            "HardwareInterface",
+                            LogLevel::Error,
+                            "Failed to forward sensor data to input manager".to_string()
+                        )).await;
+                    }
+                }
+                Some(behavior_cmd) = self.behavior_rx.recv() => {
+                    // Convert behavior command to motor command and execute
+                    self.handle_behavior_command(behavior_cmd).await;
+                }
                 Some(motor_cmd) = self.motor_rx.recv() => {
+                    // Handle direct motor commands (for backward compatibility)
                     let _ = self.log_tx.send(create_log(
                         "HardwareInterface",
                         LogLevel::Debug,
@@ -74,6 +102,61 @@ impl HardwareInterface {
             LogLevel::Info,
             "Stopped".to_string()
         )).await;
+    }
+
+    async fn handle_behavior_command(&mut self, cmd: BehaviorCommand) {
+        match cmd.behavior {
+            Behavior::MoveTowards { target, speed } => {
+                let motor_cmd = self.calculate_motor_command(target, speed);
+                let _ = self.log_tx.send(create_log(
+                    "HardwareInterface",
+                    LogLevel::Debug,
+                    format!("Executing MoveTowards: L={:.2}, R={:.2}",
+                        motor_cmd.left_speed, motor_cmd.right_speed)
+                )).await;
+            }
+            Behavior::AvoidObstacle { direction } => {
+                let motor_cmd = MotorCommand {
+                    left_speed: direction[1] * 0.5,
+                    right_speed: -direction[1] * 0.5,
+                };
+                let _ = self.log_tx.send(create_log(
+                    "HardwareInterface",
+                    LogLevel::Debug,
+                    format!("Executing AvoidObstacle: L={:.2}, R={:.2}",
+                        motor_cmd.left_speed, motor_cmd.right_speed)
+                )).await;
+            }
+            Behavior::EmergencyStop => {
+                let _ = self.log_tx.send(create_log(
+                    "HardwareInterface",
+                    LogLevel::Warn,
+                    "Emergency stop executed".to_string()
+                )).await;
+            }
+            Behavior::AdjustStance(_) => {
+                // Stance adjustments are handled by the stance module
+                let _ = self.log_tx.send(create_log(
+                    "HardwareInterface",
+                    LogLevel::Debug,
+                    "Stance adjustment received".to_string()
+                )).await;
+            }
+            Behavior::Idle => {
+                // No action needed
+            }
+        }
+    }
+
+    fn calculate_motor_command(&self, target: [f32; 3], speed: f32) -> MotorCommand {
+        // Simplified differential drive calculation
+        let angle_to_target = target[1].atan2(target[0]);
+        let turn_factor = angle_to_target.sin();
+
+        MotorCommand {
+            left_speed: speed * (1.0 - turn_factor * 0.5),
+            right_speed: speed * (1.0 + turn_factor * 0.5),
+        }
     }
 
     fn generate_hardware_status(&self, counter: u64) -> HardwareStatus {

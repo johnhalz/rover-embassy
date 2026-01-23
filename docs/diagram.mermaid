@@ -1,9 +1,10 @@
 graph TD
 
-    SA[Sensor Array] --> IM[Input MGR]
+    SA[Sensor Array] --> HI[Hardware Interface]
+    HI --> IM[Input MGR]
     DUI[Direct User Input] --> IM
     UI[User Instructions] --> IM
-    HI[Hardware Interface] --> IM
+    HI --> IM
     IM --> L[Logger]
     IM --> EU[Environment Understanding]
     IM --> S[Stance]
@@ -24,12 +25,8 @@ graph TD
     B --> SC[Safety Controller]
     SA --> SC
     SM --> SC
-    SC --> OM[Output Manager]
-    OM --> UF[User Feedback]
-    OM --> HI
-    OM --> CM[Communication Module]
-    CM --> UI
-    UF --> CM
+    SC --> HI
+    SC --> L
     EU --> L
     S --> L
     SM --> L
@@ -37,5 +34,4 @@ graph TD
     GP --> L
     OA --> L
     B --> L
-    SC --> L
-    OM --> L
+    HI --> L

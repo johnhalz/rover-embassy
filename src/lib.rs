@@ -36,7 +36,9 @@ impl RoverSystem {
         let (log_tx, log_rx) = mpsc::channel(256);
 
         // Input layer channels
-        let (sensor_data_tx, sensor_data_rx) = mpsc::channel(32);
+        // Sensor Array -> Hardware Interface -> Input Manager
+        let (sensor_data_hw_tx, sensor_data_hw_rx) = mpsc::channel(32);
+        let (sensor_data_im_tx, sensor_data_rx) = mpsc::channel(32);
         let (sensor_data_safety_tx, sensor_data_safety_rx) = mpsc::channel(32);
         let (user_command_tx, user_command_rx) = mpsc::channel(32);
         let (hw_status_tx, hw_status_rx) = mpsc::channel(32);
@@ -73,10 +75,10 @@ impl RoverSystem {
         // Behavior outputs
         let (behavior_path_goal_tx, behavior_path_goal_rx) = mpsc::channel(32);
         let (behavior_path_obstacle_tx, behavior_path_obstacle_rx) = mpsc::channel(32);
-        let (behavior_tx, behavior_rx) = mpsc::channel(32);
-
-        // Safety controller
-        let (motor_command_tx, motor_command_rx) = mpsc::channel(32);
+        
+        // Behaviour -> Safety Controller -> Hardware Interface
+        let (behavior_safety_tx, behavior_safety_rx) = mpsc::channel(32);
+        let (behavior_hw_tx, behavior_hw_rx) = mpsc::channel(32);
 
         // Output manager
         let (status_feedback_tx, status_feedback_rx) = mpsc::channel(32);
@@ -98,7 +100,7 @@ impl RoverSystem {
 
         // Spawn input layer modules
         let sensor_array = input::sensor_array::SensorArray::new(
-            sensor_data_tx,
+            sensor_data_hw_tx,
             sensor_data_safety_tx,
             log_tx.clone(),
             self.shutdown_tx.subscribe(),
@@ -121,8 +123,11 @@ impl RoverSystem {
         self.task_handles.push(tokio::spawn(user_instructions.run()));
 
         let hardware_interface = output::hardware_interface::HardwareInterface::new(
-            hw_status_tx,
+            sensor_data_hw_rx,
+            behavior_hw_rx,
             motor_command_hw_rx,
+            sensor_data_im_tx,
+            hw_status_tx,
             log_tx.clone(),
             self.shutdown_tx.subscribe(),
         );
@@ -219,25 +224,29 @@ impl RoverSystem {
             behavior_path_goal_rx,
             behavior_path_obstacle_rx,
             stance_behavior_rx,
-            behavior_tx,
+            behavior_safety_tx,
             log_tx.clone(),
             self.shutdown_tx.subscribe(),
         );
         self.task_handles.push(tokio::spawn(behaviour.run()));
 
-        // Spawn safety and output modules
+        // Spawn safety controller (validates commands before forwarding to Hardware Interface)
         let safety_controller = control::safety_controller::SafetyController::new(
-            behavior_rx,
+            behavior_safety_rx,
             sensor_data_safety_rx,
             state_safety_rx,
-            motor_command_tx,
+            behavior_hw_tx,
             log_tx.clone(),
             self.shutdown_tx.subscribe(),
         );
         self.task_handles.push(tokio::spawn(safety_controller.run()));
 
+        // Output Manager is no longer in the direct command path (Behaviour -> Hardware Interface)
+        // but keeping for status updates and backward compatibility
+        let (dummy_motor_cmd_tx, dummy_motor_cmd_rx) = mpsc::channel(32);
+        drop(dummy_motor_cmd_tx); // Close the sender so receiver will never receive
         let output_manager = output::output_manager::OutputManager::new(
-            motor_command_rx,
+            dummy_motor_cmd_rx,
             motor_command_hw_tx,
             status_feedback_tx,
             status_comm_tx,
