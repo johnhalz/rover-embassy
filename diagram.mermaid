@@ -1,0 +1,41 @@
+graph TD
+
+    SA[Sensor Array] --> IM[Input MGR]
+    DUI[Direct User Input] --> IM
+    UI[User Instructions] --> IM
+    HI[Hardware Interface] --> IM
+    IM --> L[Logger]
+    IM --> EU[Environment Understanding]
+    IM --> S[Stance]
+    IM --> SM[State Manager]
+    IM --> TMM[Task/Mission Manager]
+    SM --> TMM
+    TMM --> GP[Goal Planning]
+    EU --> OA[Obstacle Avoidance]
+    MCS[Model/Calibration Storage] --> EU
+    MCS --> S
+    MCS --> OA
+    OA <--> S
+    S <--> GP
+    GP <--> OA
+    OA --> B[Behaviour]
+    S --> B
+    GP --> B
+    B --> SC[Safety Controller]
+    SA --> SC
+    SM --> SC
+    SC --> OM[Output Manager]
+    OM --> UF[User Feedback]
+    OM --> HI
+    OM --> CM[Communication Module]
+    CM --> UI
+    UF --> CM
+    EU --> L
+    S --> L
+    SM --> L
+    TMM --> L
+    GP --> L
+    OA --> L
+    B --> L
+    SC --> L
+    OM --> L
