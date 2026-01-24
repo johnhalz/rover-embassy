@@ -75,7 +75,7 @@ impl RoverSystem {
         // Behavior outputs
         let (behavior_path_goal_tx, behavior_path_goal_rx) = mpsc::channel(32);
         let (behavior_path_obstacle_tx, behavior_path_obstacle_rx) = mpsc::channel(32);
-        
+
         // Behaviour -> Safety Controller -> Hardware Interface
         let (behavior_safety_tx, behavior_safety_rx) = mpsc::channel(32);
         let (behavior_hw_tx, behavior_hw_rx) = mpsc::channel(32);

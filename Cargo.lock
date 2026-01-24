@@ -398,6 +398,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "foxglove-flatbuffers"
+version = "0.3.6"
+dependencies = [
+ "flatbuffers",
+]
+
+[[package]]
 name = "foxglove_derive"
 version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -950,6 +957,7 @@ dependencies = [
  "crossterm",
  "flatbuffers",
  "foxglove",
+ "foxglove-flatbuffers",
  "mcap 0.24.0",
  "serde",
  "tokio",

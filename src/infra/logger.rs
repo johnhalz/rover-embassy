@@ -1,16 +1,18 @@
 use crate::types::{LogEntry, LogLevel};
-use crate::infra::foxglove as foxglove_schemas;
-use foxglove_schemas::{Log, LogArgs, LogLevel as FoxgloveLogLevel, Time, TimeArgs};
-use tokio::sync::{broadcast, mpsc};
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::fs::File;
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
-use mcap::{Writer, records::MessageHeader};
-use flatbuffers::FlatBufferBuilder;
 use chrono::Local;
 use crossterm::style::Stylize;
+use flatbuffers::FlatBufferBuilder;
 use foxglove::{Context, RawChannel, Schema, WebSocketServer, WebSocketServerHandle};
+use foxglove_flatbuffers::{
+    helpers::{create_log_message, log_schema_bytes},
+    LogLevel as FoxgloveLogLevel,
+};
+use mcap::{Writer, records::MessageHeader};
+use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{broadcast, mpsc};
 
 pub struct Logger {
     log_rx: mpsc::Receiver<LogEntry>,
@@ -26,22 +28,30 @@ pub struct Logger {
 }
 
 impl Logger {
-    pub fn new(
-        log_rx: mpsc::Receiver<LogEntry>,
-        shutdown_rx: broadcast::Receiver<()>,
-    ) -> Self {
+    pub fn new(log_rx: mpsc::Receiver<LogEntry>, shutdown_rx: broadcast::Receiver<()>) -> Self {
         // Create MCAP file with human-readable timestamp
         let timestamp = Local::now().format("%y%m%d_%H%M%S");
         let filename = format!("log_{}.mcap", timestamp);
 
         let (mcap_writer, schema_id) = match Self::create_mcap_writer(&filename) {
             Ok(writer_info) => {
-                println!("{} Created MCAP log file: {}", "[Logger]".dark_grey(), filename.magenta().bold());
-                println!("{} Press 'q' to quit gracefully for proper file indexing!", "[Logger]".dark_grey());
+                println!(
+                    "{} Created MCAP log file: {}",
+                    "[Logger]".dark_grey(),
+                    filename.magenta().bold()
+                );
+                println!(
+                    "{} Press 'q' to quit gracefully for proper file indexing!",
+                    "[Logger]".dark_grey()
+                );
                 writer_info
             }
             Err(e) => {
-                eprintln!("{} Failed to create MCAP file: {}. Logging disabled.", "[Logger]".dark_grey(), e);
+                eprintln!(
+                    "{} Failed to create MCAP file: {}. Logging disabled.",
+                    "[Logger]".dark_grey(),
+                    e
+                );
                 (None, 0)
             }
         };
@@ -60,26 +70,25 @@ impl Logger {
         }
     }
 
-    fn create_mcap_writer(filename: &str) -> Result<(Option<Writer<File>>, u16), Box<dyn std::error::Error>> {
+    fn create_mcap_writer(
+        filename: &str,
+    ) -> Result<(Option<Writer<File>>, u16), Box<dyn std::error::Error>> {
         let file = File::create(filename)?;
 
         // Use default options which enable chunking and indexing
         let mut writer = Writer::new(file)?;
 
-        // Read the Foxglove Log FlatBuffer binary schema
-        let schema_data = include_bytes!("../../schemas/Log.bfbs");
+        // Read the Foxglove Log FlatBuffer binary schema from foxglove-flatbuffers
+        let schema_data = log_schema_bytes();
 
         // Add schema to MCAP file
-        let schema_id = writer.add_schema(
-            "foxglove.Log",
-            "flatbuffer",
-            schema_data,
-        )?;
+        let schema_id = writer.add_schema("foxglove.Log", "flatbuffer", schema_data)?;
 
         Ok((Some(writer), schema_id))
     }
 
-    async fn create_websocket_server() -> Result<(Arc<Context>, WebSocketServerHandle, String), Box<dyn std::error::Error>> {
+    async fn create_websocket_server()
+    -> Result<(Arc<Context>, WebSocketServerHandle, String), Box<dyn std::error::Error>> {
         let context = Context::new();
         let host = "127.0.0.1";
         let port = 8765;
@@ -112,7 +121,11 @@ impl Logger {
                 self.ws_server_handle = Some(server_handle);
             }
             Err(e) => {
-                eprintln!("{} Failed to start WebSocket server: {}. Livestreaming disabled.", "[Logger]".dark_grey(), e);
+                eprintln!(
+                    "{} Failed to start WebSocket server: {}. Livestreaming disabled.",
+                    "[Logger]".dark_grey(),
+                    e
+                );
             }
         }
 
@@ -132,11 +145,22 @@ impl Logger {
 
         // Finalize MCAP file - write summary section and footer
         if let Some(mut writer) = self.mcap_writer.take() {
-            println!("{} Finalizing MCAP file with {} messages...", "[Logger]".dark_grey(), self.message_count);
+            println!(
+                "{} Finalizing MCAP file with {} messages...",
+                "[Logger]".dark_grey(),
+                self.message_count
+            );
             if let Err(e) = writer.finish() {
-                eprintln!("{} Error finishing MCAP file: {}", "[Logger]".dark_grey(), e);
+                eprintln!(
+                    "{} Error finishing MCAP file: {}",
+                    "[Logger]".dark_grey(),
+                    e
+                );
             } else {
-                println!("{} MCAP file finalized successfully (indexed)", "[Logger]".dark_grey());
+                println!(
+                    "{} MCAP file finalized successfully (indexed)",
+                    "[Logger]".dark_grey()
+                );
             }
         }
 
@@ -145,19 +169,11 @@ impl Logger {
 
     fn log_entry(&mut self, entry: &LogEntry) {
         // Convert SystemTime to nanoseconds since UNIX_EPOCH
-        let duration = entry.timestamp
+        let duration = entry
+            .timestamp
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
         let timestamp_nanos = duration.as_nanos() as u64;
-
-        // Build FlatBuffer message
-        let mut builder = FlatBufferBuilder::new();
-
-        // Create Time message
-        let time = Time::create(&mut builder, &TimeArgs {
-            sec: duration.as_secs() as u32,
-            nsec: duration.subsec_nanos(),
-        });
 
         // Convert log level
         let fb_level = match entry.level {
@@ -167,33 +183,25 @@ impl Logger {
             LogLevel::Error => FoxgloveLogLevel::ERROR,
         };
 
-        // Create strings
-        let message_str = builder.create_string(&entry.message);
-        let name_str = builder.create_string(&entry.module);
-
-        // Create Log message
-        let log = Log::create(&mut builder, &LogArgs {
-            timestamp: Some(time),
-            level: fb_level,
-            message: Some(message_str),
-            name: Some(name_str),
-            file: None,
-            line: 0,
-        });
-
-        builder.finish(log, None);
-        let message_data = builder.finished_data();
-        
-        // Copy the data so we can use it for both MCAP and WebSocket
-        let message_data_copy = message_data.to_vec();
+        // Build FlatBuffer message using helper function from foxglove-flatbuffers
+        let mut builder = FlatBufferBuilder::new();
+        let message_data_copy = create_log_message(
+            &mut builder,
+            entry.timestamp,
+            fb_level,
+            &entry.message,
+            &entry.module,
+            None,
+            0,
+        );
 
         // Publish to WebSocket FIRST (before MCAP to ensure real-time delivery)
         if let Some(context) = &self.foxglove_context {
             // Get or create WebSocket channel for this module
             if !self.ws_channels.contains_key(&entry.module) {
-                // Read the Foxglove Log FlatBuffer binary schema
-                let schema_data = include_bytes!("../../schemas/Log.bfbs");
-                
+                // Read the Foxglove Log FlatBuffer binary schema from foxglove-flatbuffers
+                let schema_data = log_schema_bytes();
+
                 // Create a new WebSocket channel
                 let topic = format!("roverOS/{}", entry.module);
                 let schema = Schema::new("foxglove.Log", "flatbuffer", schema_data);
@@ -207,7 +215,12 @@ impl Logger {
                         self.ws_channels.insert(entry.module.clone(), channel);
                     }
                     Err(e) => {
-                        eprintln!("{} Failed to create WebSocket channel for module {}: {}", "[Logger]".dark_grey(), entry.module, e);
+                        eprintln!(
+                            "{} Failed to create WebSocket channel for module {}: {}",
+                            "[Logger]".dark_grey(),
+                            entry.module,
+                            e
+                        );
                         return;
                     }
                 }
@@ -227,18 +240,20 @@ impl Logger {
                 None => {
                     // Need to create a new channel
                     let topic = format!("roverOS/{}", entry.module);
-                    match writer.add_channel(
-                        self.schema_id,
-                        &topic,
-                        "flatbuffer",
-                        &BTreeMap::new(),
-                    ) {
+                    match writer.add_channel(self.schema_id, &topic, "flatbuffer", &BTreeMap::new())
+                    {
                         Ok(channel_id) => {
-                            self.module_channels.insert(entry.module.clone(), channel_id);
+                            self.module_channels
+                                .insert(entry.module.clone(), channel_id);
                             channel_id
                         }
                         Err(e) => {
-                            eprintln!("{} Failed to create MCAP channel for module {}: {}", "[Logger]".dark_grey(), entry.module, e);
+                            eprintln!(
+                                "{} Failed to create MCAP channel for module {}: {}",
+                                "[Logger]".dark_grey(),
+                                entry.module,
+                                e
+                            );
                             return;
                         }
                     }
@@ -266,7 +281,11 @@ impl Drop for Logger {
         // Ensure MCAP file is properly finalized when logger is dropped
         if let Some(mut writer) = self.mcap_writer.take() {
             if let Err(e) = writer.finish() {
-                eprintln!("{} Error finishing MCAP file in Drop: {}", "[Logger]".dark_grey(), e);
+                eprintln!(
+                    "{} Error finishing MCAP file in Drop: {}",
+                    "[Logger]".dark_grey(),
+                    e
+                );
             }
         }
     }

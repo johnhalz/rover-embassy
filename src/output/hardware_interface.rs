@@ -9,11 +9,11 @@ pub struct HardwareInterface {
     sensor_rx: mpsc::Receiver<SensorData>,
     behavior_rx: mpsc::Receiver<BehaviorCommand>,
     motor_rx: mpsc::Receiver<MotorCommand>,
-    
+
     // Outputs
     sensor_tx: mpsc::Sender<SensorData>,
     status_tx: mpsc::Sender<HardwareStatus>,
-    
+
     log_tx: mpsc::Sender<LogEntry>,
     shutdown_rx: broadcast::Receiver<()>,
 }
