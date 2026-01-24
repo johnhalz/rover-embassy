@@ -9,7 +9,7 @@ crossterm = "0.28"
 serde = { version = "1.0", features = ["derive"] }
 mcap = "0.24"
 flatbuffers = "24.3"
-foxglove-flatbuffers = { path = "../foxglove-flatbuffers" }
+foxglove-flatbuffers = "0.3.7"
 chrono = "0.4"
 foxglove = "0.14"
 
